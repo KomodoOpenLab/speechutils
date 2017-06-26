@@ -9,3 +9,5 @@ gradlew
 gradlew.bat
 local.properties
 speechutils.iml
+
+app/speechutils-app\.iml
