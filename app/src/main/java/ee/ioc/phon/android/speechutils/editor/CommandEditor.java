@@ -30,6 +30,15 @@ public interface CommandEditor {
      */
     Op moveRel(int numOfChars);
 
+    /**
+     * Change either the start or the end of the selection by the given number of characters.
+     *
+     * @param numOfChars number of character positions
+     * @param type       0 for start, 1 for end
+     * @return Op
+     */
+    Op moveRelSel(int numOfChars, int type);
+
     // Press Up-arrow key
     Op keyUp();
 
@@ -57,6 +66,9 @@ public interface CommandEditor {
 
     // Move cursor right to the Nth matching regex
     Op selectReAfter(String regex, int n);
+
+    // Extend the cursor to match the given regex
+    Op selectRe(String regex, boolean applyToSelection);
 
     // Select all (note: not a context menu action)
     Op selectAll();
@@ -98,7 +110,12 @@ public interface CommandEditor {
     // Clear the clipboard
     Op clearClipboard();
 
-    // Delete the word immediately to the left
+    // Delete the character immediately to the left.
+    // In case there is a selection, then the selection is deleted.
+    Op deleteLeftChars(int numOfChars);
+
+    // Delete the word immediately to the left.
+    // In case there is a selection, then the selection is deleted.
     Op deleteLeftWord();
 
     // Replace text1 (left of cursor) with text2.
@@ -160,6 +177,8 @@ public interface CommandEditor {
     boolean commitPartialResult(String text);
 
     boolean runOp(Op op);
+
+    boolean runOp(Op op, boolean undoable);
 
     ExtractedText getExtractedText();
 

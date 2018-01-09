@@ -91,6 +91,11 @@ public class InputConnectionCommandEditor implements CommandEditor {
 
     @Override
     public boolean runOp(Op op) {
+        return runOp(op, true);
+    }
+
+    @Override
+    public boolean runOp(Op op, boolean undoable) {
         // TODO: why does this happen
         //if (op == null) {
         //    return false;
@@ -101,7 +106,7 @@ public class InputConnectionCommandEditor implements CommandEditor {
             // Operation failed;
             return false;
         }
-        if (!undo.isNoOp()) {
+        if (undoable && !undo.isNoOp()) {
             pushOp(op);
             pushOpUndo(undo);
         }
@@ -662,6 +667,28 @@ public class InputConnectionCommandEditor implements CommandEditor {
     }
 
     @Override
+    public Op selectRe(final String regex, final boolean applyToSelection) {
+        return new Op("selectRe") {
+            @Override
+            public Op run() {
+                Op undo = null;
+                mInputConnection.beginBatchEdit();
+                final ExtractedText et = getExtractedText();
+                if (et != null) {
+                    if (applyToSelection || et.selectionStart == et.selectionEnd) {
+                        Pair<Integer, Integer> pos = matchAtPos(Pattern.compile(regex), et.text, et.selectionStart, et.selectionEnd);
+                        if (pos != null) {
+                            undo = getOpSetSelection(pos.first, pos.second, et.selectionStart, et.selectionEnd).run();
+                        }
+                    }
+                }
+                mInputConnection.endBatchEdit();
+                return undo;
+            }
+        };
+    }
+
+    @Override
     public Op replace(final String query, final String replacement) {
         return new Op("replace") {
             @Override
@@ -860,6 +887,43 @@ public class InputConnectionCommandEditor implements CommandEditor {
             public Op run() {
                 PreferenceUtils.clearPrefMap(mPreferences, mRes, R.string.keyClipboardMap);
                 return Op.NO_OP;
+            }
+        };
+    }
+
+    // TODO: share code with deleteLeftWord
+    @Override
+    public Op deleteLeftChars(final int numOfChars) {
+        return new Op("deleteLeftChars") {
+            @Override
+            public Op run() {
+                Op undo = null;
+                boolean success = false;
+                mInputConnection.beginBatchEdit();
+                // If something is selected then delete the selection and return
+                final String oldText = getSelectedText();
+                if (oldText.length() > 0) {
+                    undo = getCommitTextOp(oldText, "").run();
+                } else {
+                    final CharSequence cs = mInputConnection.getTextBeforeCursor(numOfChars, 0);
+                    if (cs != null) {
+                        success = mInputConnection.deleteSurroundingText(numOfChars, 0);
+                        if (success) {
+                            mInputConnection.endBatchEdit();
+                            undo = new Op("commitText: " + cs) {
+                                @Override
+                                public Op run() {
+                                    if (mInputConnection.commitText(cs, 0)) {
+                                        return NO_OP;
+                                    }
+                                    return null;
+                                }
+                            };
+                        }
+                    }
+                }
+                mInputConnection.endBatchEdit();
+                return undo;
             }
         };
     }
@@ -1214,6 +1278,26 @@ public class InputConnectionCommandEditor implements CommandEditor {
         return pos;
     }
 
+    private Pair<Integer, Integer> matchAtPos(Pattern pattern, CharSequence input, int posStart, int posEnd) {
+        Matcher matcher = pattern.matcher(input);
+        Pair<Integer, Integer> pos = null;
+        while (matcher.find()) {
+            int group = 0;
+            if (matcher.groupCount() > 0) {
+                group = 1;
+            }
+            if (matcher.start(group) <= posStart) {
+                if (posEnd <= matcher.end(group)) {
+                    return new Pair<>(matcher.start(group), matcher.end(group));
+                }
+            } else {
+                // Stop searching if the match start only after the cursor.
+                return null;
+            }
+        }
+        return pos;
+    }
+
     private String getSelectedText() {
         CharSequence cs = mInputConnection.getSelectedText(0);
         if (cs == null || cs.length() == 0) {
@@ -1222,7 +1306,18 @@ public class InputConnectionCommandEditor implements CommandEditor {
         return cs.toString();
     }
 
-    public Op moveRel(final int numberOfChars) {
+    @Override
+    public Op moveRel(final int numOfChars) {
+        return move(numOfChars, 2);
+    }
+
+
+    @Override
+    public Op moveRelSel(final int numOfChars, final int type) {
+        return move(numOfChars, type);
+    }
+
+    private Op move(final int numberOfChars, final int type) {
         return new Op("moveRel") {
             @Override
             public Op run() {
@@ -1230,14 +1325,22 @@ public class InputConnectionCommandEditor implements CommandEditor {
                 mInputConnection.beginBatchEdit();
                 ExtractedText extractedText = getExtractedText();
                 if (extractedText != null) {
-                    int pos;
-                    if (numberOfChars < 0) {
-                        pos = extractedText.selectionStart;
+                    int newStart = extractedText.selectionStart;
+                    int newEnd = extractedText.selectionEnd;
+                    if (type == 0) {
+                        newStart += numberOfChars;
+                    } else if (type == 1) {
+                        newEnd += numberOfChars;
                     } else {
-                        pos = extractedText.selectionEnd;
+                        if (numberOfChars < 0) {
+                            newStart += numberOfChars;
+                            newEnd = newStart;
+                        } else {
+                            newEnd += numberOfChars;
+                            newStart = newEnd;
+                        }
                     }
-                    int newPos = pos + numberOfChars;
-                    undo = getOpSetSelection(newPos, newPos, extractedText.selectionStart, extractedText.selectionEnd).run();
+                    undo = getOpSetSelection(newStart, newEnd, extractedText.selectionStart, extractedText.selectionEnd).run();
                 }
                 mInputConnection.endBatchEdit();
                 return undo;
