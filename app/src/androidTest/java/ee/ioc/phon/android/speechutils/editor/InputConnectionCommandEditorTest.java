@@ -1,6 +1,7 @@
 package ee.ioc.phon.android.speechutils.editor;
 
 import android.content.Context;
+import android.os.Build;
 import android.support.test.runner.AndroidJUnit4;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -1187,6 +1188,20 @@ public class InputConnectionCommandEditorTest {
         runOp(mEditor.selectRe("\\d+", false));
         add("new");
         assertThatTextIs("123 new 789");
+    }
+
+    /**
+     * Deleting 😃 can be done by deleting a single char.
+     */
+    @Test
+    public void test103() {
+        add("\uD83D\uDE03");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            runOp(mEditor.deleteLeftChars(1));
+        } else {
+            runOp(mEditor.deleteLeftChars(2));
+        }
+        assertThatTextIs("");
     }
 
     // Can't create handler inside thread that has not called Looper.prepare()
